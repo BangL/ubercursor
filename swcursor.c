@@ -11,6 +11,7 @@
 #include <sys/prctl.h>
 #include <cairo.h>
 #include <string.h>
+#include <errno.h>
 
 typedef struct {
     const unsigned char *data;
@@ -32,7 +33,7 @@ typedef struct {
 static cairo_surface_t *load_image(const char *path);
 static void show_main_window(State_t *state);
 static gboolean tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data);
-static void run_cursor(int argc, char **argv);
+static void run_cursor(int argc, char **argv, pid_t game_pid);
 
 static State_t *state = NULL;
 
@@ -98,33 +99,44 @@ int main(int argc, char **argv)
 
     if (cmd_index == -1 || cmd_index >= argc) {
         fprintf(stderr, "Usage: %s [options] -- <command>\n", argv[0]);
-        return 1;
+        exit(1);
     }
 
-    pid_t pid = fork();
+    pid_t game_pid = fork();
 
-    if (pid < 0) {
+    if (game_pid < 0) {
         perror("fork failed");
-        return 1;
+        exit(1);
     }
 
-    if (pid == 0) {
-        prctl(PR_SET_PDEATHSIG, SIGTERM);
-
-        if (getppid() == 1)
-            exit(1);
-
-        run_cursor(argc, argv);
-        exit(0);
+    if (game_pid == 0) {
+        setpgid(0, 0);
+        execvp(argv[cmd_index], &argv[cmd_index]);
+        perror("execvp failed");
+        exit(1);
     }
 
-    execvp(argv[cmd_index], &argv[cmd_index]);
-
-    perror("execvp failed");
+    run_cursor(argc, argv, game_pid);
     return 0;
 }
 
-void run_cursor(int argc, char **argv)
+static gboolean check_game_dead(gpointer data)
+{
+    pid_t *pid = data;
+
+    int status;
+    pid_t result = waitpid(*pid, &status, WNOHANG);
+
+    if (result == *pid || (result == -1 && errno == ECHILD)) {
+        gtk_main_quit();
+        free(pid);
+        return G_SOURCE_REMOVE;
+    }
+
+    return G_SOURCE_CONTINUE;
+}
+
+void run_cursor(int argc, char **argv, pid_t game_pid)
 {
     int opt;
     cairo_surface_t *image = NULL;
@@ -197,6 +209,9 @@ void run_cursor(int argc, char **argv)
 
     gdk_set_allowed_backends("x11");
     gtk_init(&argc, &argv);
+    pid_t *pid_ptr = malloc(sizeof(pid_t));
+    *pid_ptr = game_pid;
+    g_timeout_add(500, check_game_dead, pid_ptr);
     show_main_window(state);
     gtk_main();
 
