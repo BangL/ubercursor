@@ -19,7 +19,7 @@ typedef struct {
     size_t pos;
 } mem_buffer_t;
 
-#include "swcursor-window.h"
+#include "ubercursor-window.h"
 #include "cursor_image.h"
 
 #define SECOND 1000000
@@ -233,8 +233,8 @@ load_image(const char *path)
 
 static void show_main_window(State_t *state)
 {
-    SWCursorWindow *window = swcursor_window_new();
-    swcursor_window_set_image(window, state->image);
+    UberCursorWindow *window = ubercursor_window_new();
+    ubercursor_window_set_image(window, state->image);
     gtk_widget_add_tick_callback(GTK_WIDGET(window), tick, state, NULL);
     gtk_widget_show_all(GTK_WIDGET(window));
 }
@@ -285,11 +285,11 @@ tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data)
                               (mask & Button2Mask) ||
                               (mask & Button3Mask);
 
-        swcursor_window_set_mouse_down(SWCURSOR_WINDOW(widget), mouse_down);
+        ubercursor_window_set_mouse_down(UBERCURSOR_WINDOW(widget), mouse_down);
     }
     else if (show_warning)
     {
-        fprintf(stderr, "swcursor: warning: could not query cursor position (further warnings suppressed)\n");
+        fprintf(stderr, "ubercursor: warning: could not query cursor position (further warnings suppressed)\n");
         show_warning = FALSE;
     }
 

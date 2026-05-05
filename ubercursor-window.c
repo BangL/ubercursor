@@ -1,4 +1,4 @@
-#include "swcursor-window.h"
+#include "ubercursor-window.h"
 
 #include <stdio.h>
 
@@ -8,61 +8,61 @@
 #include <gdk/gdk.h>
 #include <gdk/gdkx.h>
 
-struct _SWCursorWindow
+struct _UberCursorWindow
 {
 	GtkWindow parent_instance;
 	cairo_surface_t *image;
 	gboolean mouse_down;
 };
 
-G_DEFINE_TYPE (SWCursorWindow, swcursor_window, GTK_TYPE_WINDOW)
+G_DEFINE_TYPE (UberCursorWindow, ubercursor_window, GTK_TYPE_WINDOW)
 
-static gboolean swcursor_window_draw(GtkWidget *widget, cairo_t *cr);
-static void swcursor_window_screen_changed(GtkWidget *widget, GdkScreen *previous_screen);
-static void swcursor_window_setup_visuals(GtkWidget *widget);
-static void swcursor_window_realize(GtkWidget *widget);
-static void swcursor_window_map(GtkWidget *widget);
+static gboolean ubercursor_window_draw(GtkWidget *widget, cairo_t *cr);
+static void ubercursor_window_screen_changed(GtkWidget *widget, GdkScreen *previous_screen);
+static void ubercursor_window_setup_visuals(GtkWidget *widget);
+static void ubercursor_window_realize(GtkWidget *widget);
+static void ubercursor_window_map(GtkWidget *widget);
 
 static void
-swcursor_window_dispose(GObject *gobject)
+ubercursor_window_dispose(GObject *gobject)
 {
-	SWCursorWindow *window = SWCURSOR_WINDOW (gobject);
+	UberCursorWindow *window = UBERCURSOR_WINDOW (gobject);
 	cairo_surface_destroy(window->image);
 }
 
 static void
-swcursor_window_class_init(SWCursorWindowClass *klass)
+ubercursor_window_class_init(UberCursorWindowClass *klass)
 {
 	GtkWidgetClass *widget_class = GTK_WIDGET_CLASS (klass);
 	GObjectClass *object_class = G_OBJECT_CLASS (klass);
 
-	widget_class->draw = swcursor_window_draw;
-	widget_class->screen_changed = swcursor_window_screen_changed;
-	widget_class->realize = swcursor_window_realize;
-	widget_class->map = swcursor_window_map;
+	widget_class->draw = ubercursor_window_draw;
+	widget_class->screen_changed = ubercursor_window_screen_changed;
+	widget_class->realize = ubercursor_window_realize;
+	widget_class->map = ubercursor_window_map;
 
-	object_class->dispose = swcursor_window_dispose;
+	object_class->dispose = ubercursor_window_dispose;
 }
 
 static void
-swcursor_window_init(SWCursorWindow *self)
+ubercursor_window_init(UberCursorWindow *self)
 {
 	self->image = NULL;
 
 	gtk_widget_set_app_paintable(GTK_WIDGET (self), TRUE);
-	swcursor_window_setup_visuals(GTK_WIDGET (self));
+	ubercursor_window_setup_visuals(GTK_WIDGET (self));
 }
 
-SWCursorWindow*
-swcursor_window_new(void)
+UberCursorWindow*
+ubercursor_window_new(void)
 {
-	return g_object_new(SWCURSOR_TYPE_WINDOW, "type", GTK_WINDOW_TOPLEVEL, NULL);
+	return g_object_new(UBERCURSOR_TYPE_WINDOW, "type", GTK_WINDOW_TOPLEVEL, NULL);
 }
 
 static gboolean
-swcursor_window_draw(GtkWidget *widget, cairo_t *cr)
+ubercursor_window_draw(GtkWidget *widget, cairo_t *cr)
 {
-	SWCursorWindow *window = SWCURSOR_WINDOW (widget);
+	UberCursorWindow *window = UBERCURSOR_WINDOW (widget);
 
 	if (window->image) {
 		cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
@@ -70,22 +70,22 @@ swcursor_window_draw(GtkWidget *widget, cairo_t *cr)
 
 		if (!window->mouse_down) {
 		    cairo_paint(cr);
-        GTK_WIDGET_CLASS (swcursor_window_parent_class)->draw(widget, cr);
+        GTK_WIDGET_CLASS (ubercursor_window_parent_class)->draw(widget, cr);
     }
 	}
 
 }
 
 static void
-swcursor_window_screen_changed(GtkWidget *widget, GdkScreen *previous_screen)
+ubercursor_window_screen_changed(GtkWidget *widget, GdkScreen *previous_screen)
 {
-	swcursor_window_setup_visuals(widget);
+	ubercursor_window_setup_visuals(widget);
 
-	GTK_WIDGET_CLASS (swcursor_window_parent_class)->screen_changed(widget, previous_screen);
+	GTK_WIDGET_CLASS (ubercursor_window_parent_class)->screen_changed(widget, previous_screen);
 }
 
 static void
-swcursor_window_setup_visuals(GtkWidget *widget)
+ubercursor_window_setup_visuals(GtkWidget *widget)
 {
 	GdkScreen *screen;
 	GdkVisual *visual;
@@ -94,20 +94,20 @@ swcursor_window_setup_visuals(GtkWidget *widget)
 	visual = gdk_screen_get_rgba_visual(screen);
 
 	if(!gdk_screen_is_composited(screen)) {
-		fprintf(stderr, "swcursor: warning: screen is not composited, YMMV");
+		fprintf(stderr, "ubercursor: warning: screen is not composited, YMMV");
 	}
 
 	if (visual) {
 		gtk_widget_set_visual(widget, visual);
 	} else {
-		fprintf(stderr, "swcursor: warning: could not make window transparent");
+		fprintf(stderr, "ubercursor: warning: could not make window transparent");
 	}
 }
 
 static void
-swcursor_window_realize(GtkWidget *widget)
+ubercursor_window_realize(GtkWidget *widget)
 {
-	GTK_WIDGET_CLASS (swcursor_window_parent_class)->realize(widget);
+	GTK_WIDGET_CLASS (ubercursor_window_parent_class)->realize(widget);
 
 	GdkWindow *gdk_window;
 
@@ -123,9 +123,9 @@ swcursor_window_realize(GtkWidget *widget)
 }
 
 static void
-swcursor_window_map(GtkWidget *widget)
+ubercursor_window_map(GtkWidget *widget)
 {
-	GTK_WIDGET_CLASS (swcursor_window_parent_class)->map(widget);
+	GTK_WIDGET_CLASS (ubercursor_window_parent_class)->map(widget);
 
 	GdkWindow *gdk_window;
 	Display *xdisplay;
@@ -145,7 +145,7 @@ swcursor_window_map(GtkWidget *widget)
 }
 
 void
-swcursor_window_set_image(SWCursorWindow *window, cairo_surface_t *image)
+ubercursor_window_set_image(UberCursorWindow *window, cairo_surface_t *image)
 {
 	int imgw, imgh;
 
@@ -157,13 +157,13 @@ swcursor_window_set_image(SWCursorWindow *window, cairo_surface_t *image)
 	window->image = image;
 }
 
-cairo_surface_t *swcursor_window_get_image(SWCursorWindow *window)
+cairo_surface_t *ubercursor_window_get_image(UberCursorWindow *window)
 {
 	return window->image;
 }
 
 void
-swcursor_window_set_mouse_down(SWCursorWindow *window, gboolean mouse_down)
+ubercursor_window_set_mouse_down(UberCursorWindow *window, gboolean mouse_down)
 {
 	if (window->mouse_down != mouse_down)
 		gtk_widget_queue_draw(GTK_WIDGET (window));
@@ -171,7 +171,7 @@ swcursor_window_set_mouse_down(SWCursorWindow *window, gboolean mouse_down)
 	window->mouse_down = mouse_down;
 }
 
-gboolean swcursor_window_get_mouse_down(SWCursorWindow *window)
+gboolean ubercursor_window_get_mouse_down(UberCursorWindow *window)
 {
 	return window->mouse_down;
 }

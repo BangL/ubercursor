@@ -1,6 +1,6 @@
-# swcursor
+# ubercursor
 
-![swcursor example screenshot](cursors/cursor-large.png)
+![ubercursor example screenshot](cursors/cursor-large.png)
 
 This is a hack based fork of swcursor to replicate mouse overlays on linux.
 
@@ -19,12 +19,13 @@ gdk and xlib.
 
 ```
 $ make
-$ ./swcursor
-
+$ ./ubercursor
 ```
 
+ubercursor is to be used as wrapper for other processes (games for example)
+
 ```
-Usage: ./swcursor [-ir] [file...]
+Usage: ./ubercursor [-ir] [file...] -- <command>
 
 -i [file.png]
  load the png file as mouse cursor
@@ -33,14 +34,5 @@ Usage: ./swcursor [-ir] [file...]
 set the refresh rate per seconds
 
 Example:
-./swcursor -i cursors/cursor-large.png -r 12
+./ubercursor -i cursors/cursor-large.png -r 12 -- <command>
 ```
-
-```
-# A variety of cursors can be found in the cursors folder
-# You can display any transparent PNG image you like for the cursor
-$ ./swcursor cursors/cursor-large.png
-```
-
-For more details see
-https://github.com/andykitchen/swcursor
