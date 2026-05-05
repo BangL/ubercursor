@@ -36,3 +36,5 @@ set the refresh rate per seconds
 Example:
 ./ubercursor -i cursors/cursor-large.png -r 12 -- <command>
 ```
+
+based on https://github.com/neetsots/swcursor
