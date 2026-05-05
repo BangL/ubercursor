@@ -1,85 +1,118 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
-
+#include <signal.h>
 #include <X11/Xlib.h>
-
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
-
 #include <gdk/gdkx.h>
 
 #include "swcursor-window.h"
 
 #define SECOND 1000000
+
 typedef struct {
-  cairo_surface_t* image;
-  guint64 timestamp;
-  guint64 framerate;
+    cairo_surface_t *image;
+    guint64 timestamp;
+    guint64 framerate;
 } State_t;
 
 static cairo_surface_t *load_image(const char *path);
 static void show_main_window(State_t *state);
 static gboolean tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data);
 
-static State_t* state;
+static State_t *state = NULL;
 
-static void
-cleanup() {
-  free(state);
-  return;
+static void cleanup(int sig)
+{
+    (void)sig;
+    if (state) {
+        if (state->image)
+            cairo_surface_destroy(state->image);
+        free(state);
+        state = NULL;
+    }
+    exit(1);
 }
 
 int main(int argc, char **argv)
 {
-  int opt;
-	cairo_surface_t *image;
+    int opt;
+    cairo_surface_t *image = NULL;
 
-  signal(SIGABRT, cleanup);
-  state = (State_t*)malloc(sizeof(State_t));
+    signal(SIGABRT, cleanup);
+    signal(SIGTERM, cleanup);
+    signal(SIGINT,  cleanup);
 
-  state->framerate = SECOND/60;
-  state->timestamp = 0;
+    state = (State_t*)malloc(sizeof(State_t));
+    if (!state) {
+        fprintf(stderr, "Out of memory\n");
+        return 1;
+    }
 
-  while ((opt = getopt(argc, argv, "irh")) != -1) {
-      switch (opt) {
-      case 'i':
-        if (optind < argc) {
-          char *file = argv[optind];
-		      image = load_image(file);
+    state->framerate = SECOND / 60;
+    state->timestamp = 0;
+    state->image = NULL;
+
+    while ((opt = getopt(argc, argv, "irh")) != -1) {
+        switch (opt) {
+        case 'i':
+            if (optind < argc) {
+                image = load_image(argv[optind]);
+                optind++;
+            }
+            break;
+
+        case 'r':
+            if (optind < argc) {
+                int rate = atoi(argv[optind]);
+                if (rate > 0 && rate <= 1000) {
+                    state->framerate = SECOND / rate;
+                } else {
+                    fprintf(stderr, "Invalid rate: %s, using default 60 fps\n", argv[optind]);
+                }
+                optind++;
+            }
+            break;
+
+        case 'h':
+            printf("Usage: %s [-i file.png] [-r fps]\n\n"
+                   "Options:\n"
+                   "  -i [file]     Load PNG as cursor image\n"
+                   "  -r [number]   Set refresh rate (fps)\n"
+                   "  -h            Show this help\n\n"
+                   "Example:\n"
+                   "  %s -i cursors/cursor-large.png -r 120\n", 
+                   argv[0], argv[0]);
+            exit(EXIT_SUCCESS);
+
+        default:
+            fprintf(stderr, "Type -h for help\n");
+            exit(EXIT_FAILURE);
         }
-        break;
-      case 'r':
-      {
-        int rate = atoi(argv[optind]);
-        if(rate == 0 || rate > SECOND) {
-          fprintf(stdout, "Could not parse: %s, setting default rate to 60", argv[optind]);
-        } else {
-          state->framerate = SECOND/rate;
-        }
-        break;
-      }
-      case 'h':
-          fprintf(stdout, "Usage: %s [-ir] [file...]\n\n-i [file.png]\n load the png file as mouse cursor\n\n-r [number]\nset the refresh rate per seconds\n\nExample:\n./swcursor -i cursors/cursor-large.png -r 120", argv[0]);
-          exit(EXIT_SUCCESS);
-      default:
-          fprintf(stderr, "Type -h to see help\n", argv[0]);
-          exit(EXIT_FAILURE);
-      }
-  }
-  if(image != NULL) {
-    state->image = image;
-  } else {
-	  state->image = load_image("cursors/8.png");
-  }
-  fprintf(stdout, "Refreshing cursor with %d fps", state->framerate);
-	gtk_init (&argc, &argv);
+    }
 
-	show_main_window(state);
+    if (image == NULL) {
+        image = load_image("cursors/8.png");
+    }
 
-	gtk_main();
+    if (image) {
+        state->image = image;
+    } else {
+        fprintf(stderr, "Failed to load any cursor image\n");
+        free(state);
+        return 1;
+    }
 
-	return 0;
+    printf("Refreshing cursor at %d fps\n", (int)(SECOND / state->framerate));
+
+    gdk_set_allowed_backends("x11");
+    gtk_init(&argc, &argv);
+    show_main_window(state);
+    gtk_main();
+
+    cleanup(0);
+    return 0;
 }
 
 static cairo_surface_t*
@@ -95,70 +128,67 @@ load_image(const char *path)
 	return image;
 }
 
-static void show_main_window(State_t* state)
+static void show_main_window(State_t *state)
 {
-	SWCursorWindow *window;
-
-	window = swcursor_window_new();
-	swcursor_window_set_image(window, state->image);
-
-	gtk_widget_add_tick_callback(GTK_WIDGET (window), tick, state, free);
-	gtk_widget_show_all(GTK_WIDGET (window));
+    SWCursorWindow *window = swcursor_window_new();
+    swcursor_window_set_image(window, state->image);
+    gtk_widget_add_tick_callback(GTK_WIDGET(window), tick, state, NULL);
+    gtk_widget_show_all(GTK_WIDGET(window));
 }
 
 static gboolean
 tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data)
 {
-	static gboolean show_warning = TRUE;
+    static gboolean show_warning = TRUE;
+    State_t *state = (State_t*)user_data;
+    guint64 timestamp;
 
-	GdkWindow *gdk_window;
-	Display *xdisplay;
-	Window xroot_window;
-	Window ret_root;
-	Window ret_child;
-	int root_x, root_y;
-	int win_x, win_y;
-	int move_x, move_y;
-	unsigned int mask;
-	gint scale_factor;
-	gboolean mouse_down;
-  int w_width, w_height;
+    timestamp = gdk_frame_clock_get_frame_time(frame_clock);
 
-  State_t *state = (State_t*)user_data;
-  guint64 timestamp = gdk_frame_clock_get_frame_time(frame_clock);
+    if ((timestamp - state->timestamp) < state->framerate)
+        return G_SOURCE_CONTINUE;
 
-  if((timestamp-state->timestamp) >= state->framerate) {
-    state->timestamp=gdk_frame_clock_get_frame_time(frame_clock);
+    state->timestamp = timestamp;
 
-    gtk_window_get_size(GTK_WINDOW (widget), &w_width, &w_height);
-    gdk_window = gtk_widget_get_window(widget);
-    xdisplay = GDK_SCREEN_XDISPLAY(gdk_window_get_screen(gdk_window));
-    xroot_window = XDefaultRootWindow(xdisplay);
+    if (!gtk_widget_get_realized(widget))
+        return G_SOURCE_CONTINUE;
 
-    scale_factor = gdk_window_get_scale_factor(gdk_window);
+    GdkWindow *gdk_window = gtk_widget_get_window(widget);
+    if (gdk_window == NULL)
+        return G_SOURCE_CONTINUE;
 
-    if(XQueryPointer(xdisplay, xroot_window,
-                     &ret_root, &ret_child,
-                     &root_x, &root_y,
-                     &win_x, &win_y, &mask))
+    int w_width = 0, w_height = 0;
+    gtk_window_get_size(GTK_WINDOW(widget), &w_width, &w_height);
+
+    Display *xdisplay = gdk_x11_display_get_xdisplay(gtk_widget_get_display(widget));
+    Window xroot_window = XDefaultRootWindow(xdisplay);
+    gint scale_factor = gdk_window_get_scale_factor(gdk_window);
+
+    Window ret_root, ret_child;
+    int root_x, root_y, win_x, win_y;
+    unsigned int mask;
+
+    if (XQueryPointer(xdisplay, xroot_window,
+                      &ret_root, &ret_child,
+                      &root_x, &root_y,
+                      &win_x, &win_y, &mask))
     {
-      move_x = root_x / scale_factor - w_height / 2;
-      move_y = root_y / scale_factor - w_width / 2;
+        int move_x = (root_x / scale_factor) - (w_width / 2);
+        int move_y = (root_y / scale_factor) - (w_height / 2);
 
-      gtk_window_move(GTK_WINDOW (widget), move_x, move_y);
+        gtk_window_move(GTK_WINDOW(widget), move_x, move_y);
 
-      mouse_down = (mask & Button1Mask) ||
-                   (mask & Button2Mask) ||
-                   (mask & Button3Mask);
+        gboolean mouse_down = (mask & Button1Mask) ||
+                              (mask & Button2Mask) ||
+                              (mask & Button3Mask);
 
-      swcursor_window_set_mouse_down(SWCURSOR_WINDOW (widget), mouse_down);
-    } else {
-      if (show_warning) {
-        fprintf(stderr, "swcursor: warning: could not get cursor position from Xserver (further warnings will be suppressed)");
-        show_warning = FALSE;
-      }
+        swcursor_window_set_mouse_down(SWCURSOR_WINDOW(widget), mouse_down);
     }
-  }
+    else if (show_warning)
+    {
+        fprintf(stderr, "swcursor: warning: could not query cursor position (further warnings suppressed)\n");
+        show_warning = FALSE;
+    }
 
-	return G_SOURCE_CONTINUE;
+    return G_SOURCE_CONTINUE;
 }
