@@ -6,8 +6,20 @@
 #include <gdk/gdk.h>
 #include <gtk/gtk.h>
 #include <gdk/gdkx.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <sys/prctl.h>
+#include <cairo.h>
+#include <string.h>
+
+typedef struct {
+    const unsigned char *data;
+    size_t size;
+    size_t pos;
+} mem_buffer_t;
 
 #include "swcursor-window.h"
+#include "cursor_image.h"
 
 #define SECOND 1000000
 
@@ -20,6 +32,7 @@ typedef struct {
 static cairo_surface_t *load_image(const char *path);
 static void show_main_window(State_t *state);
 static gboolean tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data);
+static void run_cursor(int argc, char **argv);
 
 static State_t *state = NULL;
 
@@ -35,7 +48,83 @@ static void cleanup(int sig)
     exit(1);
 }
 
+static cairo_status_t read_png(void *closure,
+                                unsigned char *data,
+                                unsigned int length)
+{
+    mem_buffer_t *b = (mem_buffer_t *)closure;
+
+    if (b->pos + length > b->size)
+        length = b->size - b->pos;
+
+    memcpy(data, b->data + b->pos, length);
+    b->pos += length;
+
+    return CAIRO_STATUS_SUCCESS;
+}
+
+static cairo_surface_t *load_embedded_image()
+{
+    mem_buffer_t buf = {
+        cursors_8_png,
+        cursors_8_png_len,
+        0
+    };
+
+    cairo_surface_t *surface =
+        cairo_image_surface_create_from_png_stream(
+            read_png,
+            &buf
+        );
+
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        fprintf(stderr, "PNG decode failed\n");
+        return NULL;
+    }
+
+    return surface;
+}
+
 int main(int argc, char **argv)
+{
+    int cmd_index = -1;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--") == 0) {
+            cmd_index = i + 1;
+            break;
+        }
+    }
+
+    if (cmd_index == -1 || cmd_index >= argc) {
+        fprintf(stderr, "Usage: %s [options] -- <command>\n", argv[0]);
+        return 1;
+    }
+
+    pid_t pid = fork();
+
+    if (pid < 0) {
+        perror("fork failed");
+        return 1;
+    }
+
+    if (pid == 0) {
+        prctl(PR_SET_PDEATHSIG, SIGTERM);
+
+        if (getppid() == 1)
+            exit(1);
+
+        run_cursor(argc, argv);
+        exit(0);
+    }
+
+    execvp(argv[cmd_index], &argv[cmd_index]);
+
+    perror("execvp failed");
+    return 0;
+}
+
+void run_cursor(int argc, char **argv)
 {
     int opt;
     cairo_surface_t *image = NULL;
@@ -47,7 +136,7 @@ int main(int argc, char **argv)
     state = (State_t*)malloc(sizeof(State_t));
     if (!state) {
         fprintf(stderr, "Out of memory\n");
-        return 1;
+        return;
     }
 
     state->framerate = SECOND / 60;
@@ -93,7 +182,7 @@ int main(int argc, char **argv)
     }
 
     if (image == NULL) {
-        image = load_image("cursors/8.png");
+        image = load_embedded_image();
     }
 
     if (image) {
@@ -101,7 +190,7 @@ int main(int argc, char **argv)
     } else {
         fprintf(stderr, "Failed to load any cursor image\n");
         free(state);
-        return 1;
+        return;
     }
 
     printf("Refreshing cursor at %d fps\n", (int)(SECOND / state->framerate));
@@ -112,7 +201,6 @@ int main(int argc, char **argv)
     gtk_main();
 
     cleanup(0);
-    return 0;
 }
 
 static cairo_surface_t*
