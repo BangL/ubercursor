@@ -1,7 +1,5 @@
 # ubercursor
 
-![ubercursor example screenshot](cursors/cursor-large.png)
-
 This is a hack based fork of swcursor to replicate mouse overlays on linux.
 
 This is a simple software cursor for X11 environments, it creates an
