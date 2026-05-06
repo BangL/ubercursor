@@ -28,6 +28,7 @@ typedef struct {
     cairo_surface_t *image;
     guint64 timestamp;
     guint64 framerate;
+    guint8 hide_buttons;
 } State_t;
 
 static cairo_surface_t *load_image(const char *path);
@@ -91,6 +92,21 @@ int main(int argc, char **argv)
     int cmd_index = -1;
 
     for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "-h") == 0) {
+            printf("Usage: %s [options] -- <command>\n\n"
+                   "Options:\n"
+                   "  -i [file]     Load PNG as cursor image\n"
+                   "  -r [number]   Set refresh rate (fps)\n"
+                   "  -c [mask]     Set which buttons hide cursor (bitmask)\n"
+                   "                  1=left, 2=middle, 4=right (default: 7=all)\n"
+                   "  -h            Show this help\n\n"
+                   "Example:\n"
+                   "  %s -i cursors/cursor-large.png -r 120 -- somegame\n"
+                   "  %s -c 1 -- somegame           (hide on left click only)\n"
+                   "  %s -c 4 -- somegame           (hide on right click only)\n",
+                   argv[0], argv[0], argv[0], argv[0]);
+            exit(EXIT_SUCCESS);
+        }
         if (strcmp(argv[i], "--") == 0) {
             cmd_index = i + 1;
             break;
@@ -154,9 +170,22 @@ void run_cursor(int argc, char **argv, pid_t game_pid)
     state->framerate = SECOND / 60;
     state->timestamp = 0;
     state->image = NULL;
+    state->hide_buttons = 7;
 
-    while ((opt = getopt(argc, argv, "irh")) != -1) {
+    while ((opt = getopt(argc, argv, "c:i:r:h")) != -1) {
         switch (opt) {
+        case 'c':
+            if (optind < argc) {
+                int val = atoi(argv[optind]);
+                if (val >= 0 && val <= 7) {
+                    state->hide_buttons = (guint8)val;
+                } else {
+                    fprintf(stderr, "Invalid button mask: %s, using default 7 (all)\n", argv[optind]);
+                }
+                optind++;
+            }
+            break;
+
         case 'i':
             if (optind < argc) {
                 image = load_image(argv[optind]);
@@ -175,17 +204,6 @@ void run_cursor(int argc, char **argv, pid_t game_pid)
                 optind++;
             }
             break;
-
-        case 'h':
-            printf("Usage: %s [-i file.png] [-r fps]\n\n"
-                   "Options:\n"
-                   "  -i [file]     Load PNG as cursor image\n"
-                   "  -r [number]   Set refresh rate (fps)\n"
-                   "  -h            Show this help\n\n"
-                   "Example:\n"
-                   "  %s -i cursors/cursor-large.png -r 120\n", 
-                   argv[0], argv[0]);
-            exit(EXIT_SUCCESS);
 
         default:
             fprintf(stderr, "Type -h for help\n");
@@ -281,10 +299,10 @@ tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data)
 
         gtk_window_move(GTK_WINDOW(widget), move_x, move_y);
 
-        gboolean mouse_down = (mask & Button1Mask) ||
-                              (mask & Button2Mask) ||
-                              (mask & Button3Mask);
-
+        gboolean mouse_down = FALSE;
+        if (state->hide_buttons & 1) mouse_down |= !!(mask & Button1Mask);
+        if (state->hide_buttons & 2) mouse_down |= !!(mask & Button2Mask);
+        if (state->hide_buttons & 4) mouse_down |= !!(mask & Button3Mask);
         ubercursor_window_set_mouse_down(UBERCURSOR_WINDOW(widget), mouse_down);
     }
     else if (show_warning)
