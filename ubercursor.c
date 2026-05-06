@@ -12,6 +12,7 @@
 #include <cairo.h>
 #include <string.h>
 #include <errno.h>
+#include <getopt.h>
 
 typedef struct {
     const unsigned char *data;
@@ -24,6 +25,22 @@ typedef struct {
 
 #define SECOND 1000000
 
+static void print_usage(const char *prog, FILE *f)
+{
+    fprintf(f, "Usage: %s [options] -- <command>\n\n"
+               "Options:\n"
+               "  -i [file]     Load PNG as cursor image\n"
+               "  -r [number]   Set refresh rate (fps)\n"
+               "  -c [mask]     Set which buttons hide cursor (bitmask)\n"
+               "                  1=left, 2=middle, 4=right (default: 7=all)\n"
+               "  -h, --help    Show this help\n\n"
+               "Example:\n"
+               "  %s -i cursors/cursor-large.png -r 120 -- somegame\n"
+               "  %s -c 1 -- somegame           (hide on left click only)\n"
+               "  %s -c 4 -- somegame           (hide on right click only)\n",
+            prog, prog, prog, prog);
+}
+
 typedef struct {
     cairo_surface_t *image;
     guint64 timestamp;
@@ -31,10 +48,16 @@ typedef struct {
     guint8 hide_buttons;
 } State_t;
 
+typedef struct {
+    const char *image_path;
+    int framerate;
+    guint8 hide_buttons;
+} Config_t;
+
 static cairo_surface_t *load_image(const char *path);
 static void show_main_window(State_t *state);
 static gboolean tick(GtkWidget *widget, GdkFrameClock *frame_clock, gpointer user_data);
-static void run_cursor(int argc, char **argv, pid_t game_pid);
+static void run_cursor(State_t *state, pid_t game_pid);
 
 static State_t *state = NULL;
 
@@ -89,34 +112,60 @@ static cairo_surface_t *load_embedded_image()
 
 int main(int argc, char **argv)
 {
-    int cmd_index = -1;
+    Config_t config = {
+        .image_path = NULL,
+        .framerate = 60,
+        .hide_buttons = 7,
+    };
 
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "-h") == 0) {
-            printf("Usage: %s [options] -- <command>\n\n"
-                   "Options:\n"
-                   "  -i [file]     Load PNG as cursor image\n"
-                   "  -r [number]   Set refresh rate (fps)\n"
-                   "  -c [mask]     Set which buttons hide cursor (bitmask)\n"
-                   "                  1=left, 2=middle, 4=right (default: 7=all)\n"
-                   "  -h            Show this help\n\n"
-                   "Example:\n"
-                   "  %s -i cursors/cursor-large.png -r 120 -- somegame\n"
-                   "  %s -c 1 -- somegame           (hide on left click only)\n"
-                   "  %s -c 4 -- somegame           (hide on right click only)\n",
-                   argv[0], argv[0], argv[0], argv[0]);
-            exit(EXIT_SUCCESS);
-        }
-        if (strcmp(argv[i], "--") == 0) {
-            cmd_index = i + 1;
+    static struct option long_options[] = {
+        {"help", no_argument, 0, 'h'},
+        {0, 0, 0, 0}
+    };
+
+    int opt;
+    while ((opt = getopt_long(argc, argv, "c:i:r:h", long_options, NULL)) != -1) {
+        switch (opt) {
+        case 'c': {
+            int val = atoi(optarg);
+            if (val >= 0 && val <= 7) {
+                config.hide_buttons = (guint8)val;
+            } else {
+                fprintf(stderr, "Invalid button mask: %s, using default 7 (all)\n", optarg);
+            }
             break;
         }
+
+        case 'i':
+            config.image_path = optarg;
+            break;
+
+        case 'r': {
+            int rate = atoi(optarg);
+            if (rate > 0 && rate <= 1000) {
+                config.framerate = rate;
+            } else {
+                fprintf(stderr, "Invalid rate: %s, using default 60 fps\n", optarg);
+            }
+            break;
+        }
+
+        case 'h':
+            print_usage(argv[0], stdout);
+            exit(EXIT_SUCCESS);
+
+        default:
+            print_usage(argv[0], stderr);
+            exit(EXIT_FAILURE);
+        }
     }
 
-    if (cmd_index == -1 || cmd_index >= argc) {
-        fprintf(stderr, "Usage: %s [options] -- <command>\n", argv[0]);
+    if (optind >= argc || optind == 1 || strcmp(argv[optind - 1], "--") != 0) {
+        print_usage(argv[0], stderr);
         exit(1);
     }
+
+    int cmd_index = optind;
 
     pid_t game_pid = fork();
 
@@ -132,7 +181,34 @@ int main(int argc, char **argv)
         exit(1);
     }
 
-    run_cursor(argc, argv, game_pid);
+    State_t *state = malloc(sizeof(State_t));
+    if (!state) {
+        fprintf(stderr, "Out of memory\n");
+        return 1;
+    }
+
+    state->image = NULL;
+    state->timestamp = 0;
+    state->framerate = SECOND / config.framerate;
+    state->hide_buttons = config.hide_buttons;
+
+    if (config.image_path) {
+        state->image = load_image(config.image_path);
+        if (!state->image) {
+            fprintf(stderr, "Failed to load cursor image '%s'\n", config.image_path);
+            free(state);
+            return 1;
+        }
+    } else {
+        state->image = load_embedded_image();
+        if (!state->image) {
+            fprintf(stderr, "Failed to load embedded cursor image\n");
+            free(state);
+            return 1;
+        }
+    }
+
+    run_cursor(state, game_pid);
     return 0;
 }
 
@@ -152,81 +228,19 @@ static gboolean check_game_dead(gpointer data)
     return G_SOURCE_CONTINUE;
 }
 
-void run_cursor(int argc, char **argv, pid_t game_pid)
+void run_cursor(State_t *state, pid_t game_pid)
 {
-    int opt;
-    cairo_surface_t *image = NULL;
-
     signal(SIGABRT, cleanup);
     signal(SIGTERM, cleanup);
     signal(SIGINT,  cleanup);
 
-    state = (State_t*)malloc(sizeof(State_t));
-    if (!state) {
-        fprintf(stderr, "Out of memory\n");
-        return;
-    }
-
-    state->framerate = SECOND / 60;
-    state->timestamp = 0;
-    state->image = NULL;
-    state->hide_buttons = 7;
-
-    while ((opt = getopt(argc, argv, "c:i:r:h")) != -1) {
-        switch (opt) {
-        case 'c':
-            if (optind < argc) {
-                int val = atoi(argv[optind]);
-                if (val >= 0 && val <= 7) {
-                    state->hide_buttons = (guint8)val;
-                } else {
-                    fprintf(stderr, "Invalid button mask: %s, using default 7 (all)\n", argv[optind]);
-                }
-                optind++;
-            }
-            break;
-
-        case 'i':
-            if (optind < argc) {
-                image = load_image(argv[optind]);
-                optind++;
-            }
-            break;
-
-        case 'r':
-            if (optind < argc) {
-                int rate = atoi(argv[optind]);
-                if (rate > 0 && rate <= 1000) {
-                    state->framerate = SECOND / rate;
-                } else {
-                    fprintf(stderr, "Invalid rate: %s, using default 60 fps\n", argv[optind]);
-                }
-                optind++;
-            }
-            break;
-
-        default:
-            fprintf(stderr, "Type -h for help\n");
-            exit(EXIT_FAILURE);
-        }
-    }
-
-    if (image == NULL) {
-        image = load_embedded_image();
-    }
-
-    if (image) {
-        state->image = image;
-    } else {
-        fprintf(stderr, "Failed to load any cursor image\n");
-        free(state);
-        return;
-    }
-
     printf("Refreshing cursor at %d fps\n", (int)(SECOND / state->framerate));
 
     gdk_set_allowed_backends("x11");
-    gtk_init(&argc, &argv);
+    int dummy_argc = 1;
+    char *dummy_argv[] = { "ubercursor", NULL };
+    char **dummy_argv_ptr = dummy_argv;
+    gtk_init(&dummy_argc, &dummy_argv_ptr);
     pid_t *pid_ptr = malloc(sizeof(pid_t));
     *pid_ptr = game_pid;
     g_timeout_add(500, check_game_dead, pid_ptr);
