@@ -27,7 +27,12 @@ static void
 ubercursor_window_dispose(GObject *gobject)
 {
 	UberCursorWindow *window = UBERCURSOR_WINDOW (gobject);
-	cairo_surface_destroy(window->image);
+	if (window->image) {
+		cairo_surface_destroy(window->image);
+		window->image = NULL;
+	}
+
+	G_OBJECT_CLASS (ubercursor_window_parent_class)->dispose(gobject);
 }
 
 static void
@@ -70,9 +75,11 @@ ubercursor_window_draw(GtkWidget *widget, cairo_t *cr)
 
 		if (!window->mouse_down) {
 		    cairo_paint(cr);
-        GTK_WIDGET_CLASS (ubercursor_window_parent_class)->draw(widget, cr);
-    }
+            GTK_WIDGET_CLASS (ubercursor_window_parent_class)->draw(widget, cr);
+        }
 	}
+
+	return FALSE;
 
 }
 

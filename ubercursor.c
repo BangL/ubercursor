@@ -8,7 +8,6 @@
 #include <gdk/gdkx.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <sys/prctl.h>
 #include <cairo.h>
 #include <string.h>
 #include <errno.h>
@@ -70,7 +69,7 @@ static void cleanup(int sig)
         free(state);
         state = NULL;
     }
-    exit(1);
+    exit(0);
 }
 
 static cairo_status_t read_png(void *closure,
