@@ -23,7 +23,7 @@ $ ./ubercursor
 ubercursor is to be used as wrapper for other processes (games for example)
 
 ```
-Usage: ./ubercursor [-ir] [file...] -- <command>
+Usage: ./ubercursor [-i file] [-r number] -- <command>
 
 -i [file.png]
  load the png file as mouse cursor
@@ -32,7 +32,7 @@ Usage: ./ubercursor [-ir] [file...] -- <command>
 set the refresh rate per seconds
 
 Example:
-./ubercursor -i cursors/cursor-large.png -r 12 -- <command>
+./ubercursor -i cursors/cursor-large.png -r 144 -- <command>
 ```
 
 based on https://github.com/neetsots/swcursor
